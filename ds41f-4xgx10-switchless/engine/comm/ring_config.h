@@ -19,6 +19,12 @@ struct RankAddr {
   std::string ssh;                 // RANK<r>_SSH: how rank 0's scripts reach it (unused by the engine)
   std::string next_ip[kDomains];   // RANK<r>_NEXT_IP<d>: this rank's address on the link to rank+1
   std::string prev_ip[kDomains];   // RANK<r>_PREV_IP<d>: this rank's address on the link to rank-1
+  // RANK<r>_NEXT_DEV<d> / RANK<r>_PREV_DEV<d>, optional: the RDMA device this rank uses on the link to
+  // rank+1 / rank-1, overriding the fleet-wide NEXT_DEV<d> / PREV_DEV<d>. For a straight-cabled ring,
+  // where every cable joins the same port letter at both ends and the "next" direction alternates
+  // f0/f1/f0/f1 down the ring; a crossed cabling (upstream's) needs no override.
+  std::string next_dev[kDomains];
+  std::string prev_dev[kDomains];
   // RANK<r>_WEIGHTS, _HASHMAP, _ENGRAM (the shards' directory), _SPILL, as written (fleet_path expands
   // them: {rank}, ~/)
   std::string weights, hashmap, engram, spill;

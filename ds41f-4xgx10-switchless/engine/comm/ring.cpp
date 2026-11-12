@@ -456,20 +456,20 @@ Ring::Ring(const Options& o) : impl_(new Impl) {
     std::random_device rd;
     for (int d = 0; d < kDomains; d++) {
       const std::string dd = std::to_string(d);
-      open_link(I.to_next[d], F.next_dev[d].c_str(), F.gid_index, me.next_ip[d], key + "NEXT_IP" + dd, F.file,
-                I.region.ptr, I.region.size, rd());
-      open_link(I.to_prev[d], F.prev_dev[d].c_str(), F.gid_index, me.prev_ip[d], key + "PREV_IP" + dd, F.file,
-                I.region.ptr, I.region.size, rd());
+      open_link(I.to_next[d], me.next_dev[d].c_str(), F.gid_index, me.next_ip[d], key + "NEXT_IP" + dd,
+                F.file, I.region.ptr, I.region.size, rd());
+      open_link(I.to_prev[d], me.prev_dev[d].c_str(), F.gid_index, me.prev_ip[d], key + "PREV_IP" + dd,
+                F.file, I.region.ptr, I.region.size, rd());
       // The opposite rank is reached through the next-facing device: in a switched fleet every peer is on it.
       if (I.direct)
-        open_link(I.to_opp[d], F.next_dev[d].c_str(), F.gid_index, me.next_ip[d], key + "NEXT_IP" + dd, F.file,
-                  I.region.ptr, I.region.size, rd());
+        open_link(I.to_opp[d], me.next_dev[d].c_str(), F.gid_index, me.next_ip[d], key + "NEXT_IP" + dd,
+                  F.file, I.region.ptr, I.region.size, rd());
     }
     I.bootstrap();
     for (int d = 0; d < kDomains; d++) {
-      connect_link(I.to_next[d], F.next_dev[d].c_str(), F.gid_index);
-      connect_link(I.to_prev[d], F.prev_dev[d].c_str(), F.gid_index);
-      if (I.direct) connect_link(I.to_opp[d], F.next_dev[d].c_str(), F.gid_index);
+      connect_link(I.to_next[d], me.next_dev[d].c_str(), F.gid_index);
+      connect_link(I.to_prev[d], me.prev_dev[d].c_str(), F.gid_index);
+      if (I.direct) connect_link(I.to_opp[d], me.next_dev[d].c_str(), F.gid_index);
     }
   }
   CUDA_CHECK(cudaMalloc(&I.d_seq, 2 * sizeof(unsigned long long)));

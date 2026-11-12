@@ -61,6 +61,8 @@ Fleet read_fleet(const std::string& file) {
     for (int d = 0; d < kDomains; d++) {
       keys[p + "NEXT_IP" + std::to_string(d)] = &R.next_ip[d];
       keys[p + "PREV_IP" + std::to_string(d)] = &R.prev_ip[d];
+      keys[p + "NEXT_DEV" + std::to_string(d)] = &R.next_dev[d];
+      keys[p + "PREV_DEV" + std::to_string(d)] = &R.prev_dev[d];
     }
     keys[p + "WEIGHTS"] = &R.weights;
     keys[p + "HASHMAP"] = &R.hashmap;
@@ -103,6 +105,13 @@ Fleet read_fleet(const std::string& file) {
   for (int d = 0; d < kDomains; d++) {
     need("NEXT_DEV" + std::to_string(d), F.next_dev[d]);
     need("PREV_DEV" + std::to_string(d), F.prev_dev[d]);
+  }
+  for (int r = 0; r < kRanks; r++) {
+    RankAddr& R = F.rank[r];
+    for (int d = 0; d < kDomains; d++) {  // a rank's device override falls back to the fleet-wide name
+      if (R.next_dev[d].empty()) R.next_dev[d] = F.next_dev[d];
+      if (R.prev_dev[d].empty()) R.prev_dev[d] = F.prev_dev[d];
+    }
   }
   for (int r = 0; r < kRanks; r++) {
     RankAddr& R = F.rank[r];

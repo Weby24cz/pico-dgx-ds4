@@ -9,7 +9,7 @@ FLEET=${FLEET:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/fleet/homelab
 fleet_load() {
   local f=$1 line n=0 key val k v
   local skip='^[[:blank:]]*(#.*)?$' re='^([A-Z][A-Z0-9_]*)=([A-Za-z0-9._/~:,@+%{}-]*)([[:blank:]]+(#.*)?)?$'
-  local known='^(GID_INDEX|NEXT_DEV[01]|PREV_DEV[01]|BIN_DIR|LOG_DIR|SERVICE_DIR|RING_LOCK|RANK[0-3]_(NAME|HOSTNAME|SSH|NEXT_IP[01]|PREV_IP[01]|WEIGHTS|HASHMAP|ENGRAM|ENGRAM_READ_BATCH|SPILL))$'
+  local known='^(GID_INDEX|NEXT_DEV[01]|PREV_DEV[01]|BIN_DIR|LOG_DIR|SERVICE_DIR|RING_LOCK|RANK[0-3]_(NAME|HOSTNAME|SSH|NEXT_IP[01]|PREV_IP[01]|NEXT_DEV[01]|PREV_DEV[01]|WEIGHTS|HASHMAP|ENGRAM|ENGRAM_READ_BATCH|SPILL))$'
   local -A seen=()
   if [ ! -r "$f" ] || [ -d "$f" ]; then
     echo "fleet: cannot read the fleet file $f (FLEET=FILE)" >&2
