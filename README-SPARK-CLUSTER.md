@@ -26,28 +26,44 @@ first start. **Nothing has been started** — the wrapper refuses until every st
 
 ## Pending before the first start (in order)
 
-1. **Rust toolchain on spark1** (`cargo`/`rustc` are absent): `rustup` with a 1.97+ stable, then
-   `(cd ds41f-4xgx10-switchless/frontend && cargo build --release -j4)`. The C++ engine is built.
-2. **API key**: `(umask 077; openssl rand -hex 24 > ~/dsgb10-data/api-key)`.
-3. **Gate weights on all four boxes** (engine exits without them):
-   `for h in spark2 spark3 spark4; do scp ds41f-4xgx10-switchless/tools/stack4/cfmlp_cml.bin $h:~/; done`
-   plus a copy on spark1 at `~/cfmlp_cml.bin` (spark1's own copy: plain `cp`, not scp).
-4. **Weight files, one per rank** (README "How to use" step 4; ~78 GB each, cut on rank 0 from the
-   checkpoint at `~/ai/models/hub/models--deepseek-ai--DeepSeek-V4.1-Flash-1017/snapshots/1bae0e10…`,
-   which is the exact revision the fork's numbers are measured on):
-   `engine/build/weights/dsw_convert --ckpt <snapshot dir> --rank r --out ~/rankfiles/rankr.dsw`
-   for r=1,2,3 then 0, `dsw_verify` each, then copy to `~/dsgb10/weights/rank{r}.dsw` per the fleet
-   file (ranks 1-3 over the ring: `bash /home/pavelkubicek/cluster/ring-ssh.sh`).
-5. **Engram store** (step 5): `engram_pack` per rank + `make_hashmap_stdlib.py` into
-   `~/dsgb10/engram/` on every box (`RANK<r>_ENGRAM`/`_HASHMAP` in the fleet file).
-6. **Disk on spark3**: `MIN_AVAIL_GIB=100` (service.sh's floor) will refuse a start there once the
-   rank file and shards land (~187 GiB free now, ~58 GiB after). Free space first.
-7. **Ring self-check, no serving**: `cd ds41f-4xgx10-switchless && export FLEET=$PWD/fleet/spark-cluster.conf
-   && engine/server/ring.sh engine/comm/run4.sh engine/build/comm/ring_test` — every rank must print
-   `passed`. This exercises the patched per-rank device wiring end to end.
-8. **Start + bench**: `./spark-start.sh` (the family rule: the TensorFold kit holds port 8000 — stop
-   it first), then the README's checks (`tools/bench/bench.py http://127.0.0.1:8000/v1 c1 27` with
-   the bearer key) and sparkDash on dell.
+1. **`pico-fetch-engram.sh` → `pico-prep.sh`** (ran 2026-11-12; logs `~/pico-fetch.log`,
+   `~/pico-prep.log` on spark1): the HF snapshot on spark1 was missing the two Engram shards
+   (`model-00047/48-of-00048.safetensors`, 101.5 GB each — `dsw_convert` died on the 12 missing
+   layer-1/14 tensors; the TensorFold kit's data was quarter-packed in its own `.tfe` format and
+   useless here), so the fetch script downloaded them into the HF cache first. The prep script then
+   built dsfront (Rust 1.99.1), cut each rank's file, verified it against the checkpoint, packed
+   the rank's Engram shards, shipped ranks 1-3 over the ring (`ring-ssh.sh`), CRC-checked each on
+   its target box (`dsw_load --verify-crc`), placed rank 0's files, pre-staged `dsgb10_rank` +
+   `dsfront` + `fleet.conf` into every box's `~/dsgb10/bin/`. API key done (`~/dsgb10-data/api-key`,
+   0600); gate weights done (`~/cfmlp_cml.bin` on all four, 5536 B).
+2. **Ring self-check, no serving** (only while the GLM kit is STOPPED — the ring is one-job-at-a-time
+   and the GLM kit is live on spark1+spark2): `cd ds41f-4xgx10-switchless && export
+   FLEET=$PWD/fleet/spark-cluster.conf && engine/server/ring.sh engine/comm/run4.sh
+   engine/build/comm/ring_test` — every rank must print `passed`. Exercises the patched per-rank
+   device wiring end to end.
+3. **Start + bench**: `./spark-start.sh` (the family rule: ONE DeepSeek kit holds port 8000 — the
+   TensorFold 4x kit is dismantled, the GLM kit uses 8000 only on its own pair), then the README's
+   checks (`tools/bench/bench.py http://127.0.0.1:8000/v1 c1 27` with the bearer key) and sparkDash
+   on dell.
+
+## Done 2026-11-12 (preparation pass)
+
+- TensorFold 4x kit dismantled on all four Sparks: `dsv41-nfs-cx7-relay` container stopped+removed
+  (spark4), both `tensorfold-dsv41:native-*` images removed everywhere, all 4x data dirs deleted
+  (`engram-packed4x-1bae0e10` x4, legacy `engram4x-1bae0e10` 190G on spark2, `rank-cache4x-*` x3,
+  head `tensorfold-dsv41/1bae0e10/rank-cache` 75G, `cache/dsv41-tensorfold-4x`). Freed: spark1 +123G
+  (356 free), spark2 +312G (510), spark3 +125G (312), spark4 +125G (614). GLM and Qwen images/data
+  untouched; the shared HF checkpoint stays; the 2x EXL3 kit's image was among the removed
+  `tensorfold-dsv41` tags (rebuildable from its kit; its big data was already gone).
+- The HF snapshot turned out incomplete: no `model-00047/48` (the Engram tables). The TensorFold
+  kit had its own Engram source; this kit reads the checkpoint directly, so the fetch script
+  downloaded both shards (~203 GB) from the ungated repo.
+- Head data prepared: `~/dsgb10/{weights,engram}` filled on every box (rank files ~78 GB each,
+  shards ~50.7 GB per rank, one hash map), binaries pre-staged in `~/dsgb10/bin/`, API key at
+  `~/dsgb10-data/api-key`, gate weights at `~/cfmlp_cml.bin` (all four).
+- `MIN_AVAIL_GIB=100` blocker resolved: spark3 went from ~187 to ~312 GiB free; after its rank file
+  (~78 GiB) and shards (~51 GiB) it holds ~183 GiB — above the floor.
+- sparkDash card on dell probes port 8000 and shows this kit down until the first start.
 
 ## Notes
 
