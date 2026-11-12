@@ -7,6 +7,7 @@ flock -n 9 || { echo "pico-fetch: another instance holds ~/pico-fetch.lock" >&2;
 log() { echo "[$(date '+%F %T')] $*"; }
 
 log "downloading model-00047/48 (Engram tables, ~203 GB)"
+export HF_HUB_CACHE="$HOME/ai/models/hub"   # the family cache; the CLI default (~/.cache) is wrong here
 ~/.local/bin/hf download deepseek-ai/DeepSeek-V4.1-Flash-1017 \
   model-00047-of-00048.safetensors model-00048-of-00048.safetensors
 log "download done"
