@@ -46,24 +46,29 @@ first start. **Nothing has been started** — the wrapper refuses until every st
    checks (`tools/bench/bench.py http://127.0.0.1:8000/v1 c1 27` with the bearer key) and sparkDash
    on dell.
 
-## Done 2026-11-12 (preparation pass)
+## Done 2026-11-12 (preparation pass) — READY TO START
 
+- `pico-verify.sh` on spark1: **VERIFY: ALL GOOD** on all four Sparks — every rank's weight file
+  (77,719,715,840 B) and two Engram shards present, `engram_hashmap.bin` sha256
+  `2405ae1d…` identical everywhere, `cfmlp_cml.bin` identical everywhere, `dsgb10_rank` + `dsfront`
+  + `fleet.conf` staged in every `~/dsgb10/bin/`, `kho=off` set everywhere. Disk free: spark1 235G,
+  spark2 391G, spark3 192G, spark4 306G — all above `MIN_AVAIL_GIB=100`.
 - TensorFold 4x kit dismantled on all four Sparks: `dsv41-nfs-cx7-relay` container stopped+removed
   (spark4), both `tensorfold-dsv41:native-*` images removed everywhere, all 4x data dirs deleted
   (`engram-packed4x-1bae0e10` x4, legacy `engram4x-1bae0e10` 190G on spark2, `rank-cache4x-*` x3,
-  head `tensorfold-dsv41/1bae0e10/rank-cache` 75G, `cache/dsv41-tensorfold-4x`). Freed: spark1 +123G
-  (356 free), spark2 +312G (510), spark3 +125G (312), spark4 +125G (614). GLM and Qwen images/data
-  untouched; the shared HF checkpoint stays; the 2x EXL3 kit's image was among the removed
-  `tensorfold-dsv41` tags (rebuildable from its kit; its big data was already gone).
+  head `tensorfold-dsv41/1bae0e10/rank-cache` 75G, `cache/dsv41-tensorfold-4x`). GLM and Qwen
+  images/data untouched; the 2x EXL3 kit's image was among the removed `tensorfold-dsv41` tags
+  (rebuildable from its kit; its big data was already gone).
 - The HF snapshot turned out incomplete: no `model-00047/48` (the Engram tables). The TensorFold
   kit had its own Engram source; this kit reads the checkpoint directly, so the fetch script
-  downloaded both shards (~203 GB) from the ungated repo.
+  downloaded both shards (~203 GB) — **into the family cache** (`HF_HUB_CACHE` is pinned in the
+  script after the first fetch landed in `~/.cache` and cost a re-run). After the packed shards
+  were cut, the two source blobs moved to spark4 cold storage (`spark4:~/pico-cold/`, size-checked,
+  ring transport) — spark1 keeps the 46 text shards, config, tokenizer; a re-prep copies the two
+  blobs back or re-fetches with `pico-fetch-engram.sh` (~30 min).
 - Head data prepared: `~/dsgb10/{weights,engram}` filled on every box (rank files ~78 GB each,
   shards ~50.7 GB per rank, one hash map), binaries pre-staged in `~/dsgb10/bin/`, API key at
   `~/dsgb10-data/api-key`, gate weights at `~/cfmlp_cml.bin` (all four).
-- `MIN_AVAIL_GIB=100` blocker resolved: spark3 went from ~187 to ~312 GiB free; after its rank file
-  (~78 GiB) and shards (~51 GiB) it holds ~183 GiB — above the floor.
-- sparkDash card on dell probes port 8000 and shows this kit down until the first start.
 
 ## Notes
 
