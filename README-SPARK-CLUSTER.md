@@ -26,6 +26,16 @@ first start. **Nothing has been started** — the wrapper refuses until every st
 
 ## Pending before the first start (in order)
 
+0. **Restore the rank-2 data to spark3** — deferred with the kit (2026-11-12): to keep the GLM
+   pair's prepare-gate (needs ~200 GB free on spark3) clear, spark3's `rank2.dsw` + its two Engram
+   shards are parked on `spark4:~/pico-cold/` (size-checked over the ring; `~/pico-park-rank2.log`).
+   Before the first start: park the GLM pair off, copy the three files back to
+   `~/dsgb10/{weights,engram}/` on spark3 (`rsync -a -e "bash /home/pavelkubicek/cluster/ring-ssh.sh"
+   spark4.lan:/home/pavelkubicek/pico-cold/<f> ~/dsgb10/...`), re-run `./pico-verify.sh`.
+   The two Engram source blobs are there too (`pico-fetch-engram.sh` re-downloads if lost).
+   Port 8000 note: Qwen (spark1/2) and GLM (spark3/4) each hold their own pair's 8000 — this kit
+   wants a free pair, stop the kit on its Sparks first.
+
 1. **`pico-fetch-engram.sh` → `pico-prep.sh`** (ran 2026-11-12; logs `~/pico-fetch.log`,
    `~/pico-prep.log` on spark1): the HF snapshot on spark1 was missing the two Engram shards
    (`model-00047/48-of-00048.safetensors`, 101.5 GB each — `dsw_convert` died on the 12 missing
