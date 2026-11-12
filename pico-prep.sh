@@ -48,15 +48,35 @@ for r in 1 2 3 0; do
     T="spark$((r + 1))"   # this fleet: rank 1 = spark2, rank 2 = spark3, rank 3 = spark4
     log "rank $r: shipping rank file + shards + hashmap to $T"
     ssh "$T" 'mkdir -p ~/dsgb10/weights ~/dsgb10/engram ~/dsgb10/bin'
-    rsync -a -e "bash $RING_SSH" "$OUT/rank$r.dsw" "$T.lan:/home/pavelkubicek/dsgb10/weights/rank$r.dsw.part"
-    rsync -a -e "bash $RING_SSH" "$OUT/engram-l1-r${r}of4.bin" "$OUT/engram-l14-r${r}of4.bin" "$T.lan:/home/pavelkubicek/dsgb10/engram/"
-    rsync -a -e "bash $RING_SSH" "$OUT/engram_hashmap.bin" "$T.lan:/home/pavelkubicek/dsgb10/engram/"
-    ssh "$T" "mv ~/dsgb10/weights/rank$r.dsw.part ~/dsgb10/weights/rank$r.dsw"
-    if [ -x "$KIT/engine/build/weights/dsw_load" ]; then
-      scp -q "$KIT/engine/build/weights/dsw_load" "$T":~/dsw_load
-      log "rank $r: CRC load check on $T"
-      ssh "$T" "~/dsw_load ~/dsgb10/weights/rank$r.dsw --verify-crc --rank $r"
-    fi
+    ship() {  # skip when the target already holds the file at the right size (resumable runs)
+      local src="$1" dst="$2"
+      local ssz tsz
+      ssz=$(stat -c %s "$src")
+      tsz=$(ssh "$T" "stat -c %s '$dst' 2>/dev/null || echo 0")
+      if [ "$ssz" = "$tsz" ]; then
+        log "  $dst: already shipped ($ssz bytes)"
+      else
+        rsync -a -e "bash $RING_SSH" "$src" "$T.lan:$dst.part"
+        ssh "$T" "mv '$dst.part' '$dst'"
+      fi
+    }
+    ship "$OUT/rank$r.dsw" "/home/pavelkubicek/dsgb10/weights/rank$r.dsw"
+    ship "$OUT/engram-l1-r${r}of4.bin" "/home/pavelkubicek/dsgb10/engram/engram-l1-r${r}of4.bin"
+    ship "$OUT/engram-l14-r${r}of4.bin" "/home/pavelkubicek/dsgb10/engram/engram-l14-r${r}of4.bin"
+    ship "$OUT/engram_hashmap.bin" "/home/pavelkubicek/dsgb10/engram/engram_hashmap.bin"
+    # transfer integrity, CPU-only (the GLM kit holds the workers' GPUs; the engine re-checks every
+    # tensor's CRC against its own header at load, so this guards the ring transfer only)
+    log "rank $r: sha256 transfer check on $T"
+    for pair in \
+      "$OUT/rank$r.dsw:/home/pavelkubicek/dsgb10/weights/rank$r.dsw" \
+      "$OUT/engram-l1-r${r}of4.bin:/home/pavelkubicek/dsgb10/engram/engram-l1-r${r}of4.bin" \
+      "$OUT/engram-l14-r${r}of4.bin:/home/pavelkubicek/dsgb10/engram/engram-l14-r${r}of4.bin"; do
+      src="${pair%%:*}"; dst="${pair#*:}"
+      s=$(sha256sum "$src" | cut -d' ' -f1)
+      t=$(ssh "$T" "sha256sum '$dst' | cut -d' ' -f1")
+      [ "$s" = "$t" ] || { echo "sha256 mismatch for $(basename "$src"): $s vs $t" >&2; exit 1; }
+      log "  $(basename "$src"): $t"
+    done
     log "rank $r: done; dropping the local copies"
     rm -f "$OUT/rank$r.dsw" "$OUT/engram-l1-r${r}of4.bin" "$OUT/engram-l14-r${r}of4.bin"
   fi
