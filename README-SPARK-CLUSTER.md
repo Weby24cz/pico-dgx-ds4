@@ -59,10 +59,13 @@ first start. **Nothing has been started** — the wrapper refuses until every st
    engine/build/comm/ring_test` — every rank must print `passed`. Exercises the patched per-rank
    device wiring end to end.
 3. **Start + bench**: stop Qwen (spark1/2) and GLM (spark3/4), restore the rank-2 data (step 0),
-   then `./spark-start.sh` — keyless, like the rest of the family. Before anything else prove the
+   then `./spark-vision.sh start` (the image-encoder sidecar, docs/vision.md — without it dsfront
+   refuses image parts with a 400, which is how the first 2026-11-12 run served) and
+   `./spark-start.sh` — keyless, like the rest of the family. Before anything else prove the
    port is pico's: `curl -s http://127.0.0.1:8000/v1/models | grep DeepSeek-V4.1-Flash-1017`.
    Then the README's checks (`tools/bench/bench.py http://127.0.0.1:8000/v1 c1 27`, no key) and
-   sparkDash on dell.
+   sparkDash on dell. Vision smoke: an `image_url` chat request must answer (sidecar down =>
+   503, never 400).
 
 ## Done 2026-11-12 (preparation pass) — READY TO START
 
