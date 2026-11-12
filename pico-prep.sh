@@ -45,16 +45,17 @@ for r in 1 2 3 0; do
     "$KIT/engine/build/engram/engram_pack" "$CKPT" "$OUT" "$r"
   fi
   if [ "$r" != 0 ]; then
-    log "rank $r: shipping rank file + shards + hashmap to spark$r"
-    ssh "spark$r" 'mkdir -p ~/dsgb10/weights ~/dsgb10/engram ~/dsgb10/bin'
-    rsync -a -e "bash $RING_SSH" "$OUT/rank$r.dsw" "spark$r.lan:/home/pavelkubicek/dsgb10/weights/rank$r.dsw.part"
-    rsync -a -e "bash $RING_SSH" "$OUT/engram-l1-r${r}of4.bin" "$OUT/engram-l14-r${r}of4.bin" "spark$r.lan:/home/pavelkubicek/dsgb10/engram/"
-    rsync -a -e "bash $RING_SSH" "$OUT/engram_hashmap.bin" "spark$r.lan:/home/pavelkubicek/dsgb10/engram/"
-    ssh "spark$r" "mv ~/dsgb10/weights/rank$r.dsw.part ~/dsgb10/weights/rank$r.dsw"
+    T="spark$((r + 1))"   # this fleet: rank 1 = spark2, rank 2 = spark3, rank 3 = spark4
+    log "rank $r: shipping rank file + shards + hashmap to $T"
+    ssh "$T" 'mkdir -p ~/dsgb10/weights ~/dsgb10/engram ~/dsgb10/bin'
+    rsync -a -e "bash $RING_SSH" "$OUT/rank$r.dsw" "$T.lan:/home/pavelkubicek/dsgb10/weights/rank$r.dsw.part"
+    rsync -a -e "bash $RING_SSH" "$OUT/engram-l1-r${r}of4.bin" "$OUT/engram-l14-r${r}of4.bin" "$T.lan:/home/pavelkubicek/dsgb10/engram/"
+    rsync -a -e "bash $RING_SSH" "$OUT/engram_hashmap.bin" "$T.lan:/home/pavelkubicek/dsgb10/engram/"
+    ssh "$T" "mv ~/dsgb10/weights/rank$r.dsw.part ~/dsgb10/weights/rank$r.dsw"
     if [ -x "$KIT/engine/build/weights/dsw_load" ]; then
-      scp -q "$KIT/engine/build/weights/dsw_load" "spark$r":~/dsw_load
-      log "rank $r: CRC load check on spark$r"
-      ssh "spark$r" "~/dsw_load ~/dsgb10/weights/rank$r.dsw --verify-crc --rank $r"
+      scp -q "$KIT/engine/build/weights/dsw_load" "$T":~/dsw_load
+      log "rank $r: CRC load check on $T"
+      ssh "$T" "~/dsw_load ~/dsgb10/weights/rank$r.dsw --verify-crc --rank $r"
     fi
     log "rank $r: done; dropping the local copies"
     rm -f "$OUT/rank$r.dsw" "$OUT/engram-l1-r${r}of4.bin" "$OUT/engram-l14-r${r}of4.bin"
@@ -70,10 +71,11 @@ cp "$OUT/engram_hashmap.bin" "$HOME/dsgb10/engram/engram_hashmap.bin"
 # 4. pre-stage binaries + fleet.conf on every box (service.sh re-copies at start anyway)
 cp "$KIT/fleet/spark-cluster.conf" "$HOME/dsgb10/bin/fleet.conf"
 for r in 1 2 3; do
-  log "pre-staging binaries on spark$r"
-  scp -q "$KIT/engine/build/server/dsgb10_rank" "spark$r":~/dsgb10/bin/
-  scp -q "$KIT/frontend/target/release/dsfront" "spark$r":~/dsgb10/bin/
-  scp -q "$KIT/fleet/spark-cluster.conf" "spark$r":~/dsgb10/bin/fleet.conf
+  T="spark$((r + 1))"   # this fleet: rank 1 = spark2, rank 2 = spark3, rank 3 = spark4
+  log "pre-staging binaries on $T"
+  scp -q "$KIT/engine/build/server/dsgb10_rank" "$T":~/dsgb10/bin/
+  scp -q "$KIT/frontend/target/release/dsfront" "$T":~/dsgb10/bin/
+  scp -q "$KIT/fleet/spark-cluster.conf" "$T":~/dsgb10/bin/fleet.conf
 done
 cp "$KIT/engine/build/server/dsgb10_rank" "$KIT/frontend/target/release/dsfront" "$HOME/dsgb10/bin/"
 
