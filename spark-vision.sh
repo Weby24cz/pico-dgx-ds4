@@ -17,9 +17,14 @@ source "$KIT_ROOT/spark-cluster.env"
 HOST=127.0.0.1
 PORT=${DSGB10_VISION_ADDR##*:}
 SNAP="${DSGB10_SNAPSHOT/#\~/$HOME}"
+# The snapshot's files are symlinks into the hub's blob store (../../blobs/…): mounting the
+# snapshot dir alone leaves them dangling in the container. Mount the hub root instead and
+# address the snapshot by its path under it.
+HUB_ROOT="$(dirname "$(dirname "$(dirname "$SNAP")")")"
+REL_SNAP="${SNAP#"$HUB_ROOT"/}"
 
 fail() { echo "spark-vision: $*" >&2; exit 1; }
-up()   { docker ps --format '{{.Names}}' | grep -qx "$NAME"; }
+running() { [ "$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null)" = running ]; }
 
 check() {  # everything the sidecar and dsfront's vision path need; no side effects
   docker image inspect "$IMAGE" > /dev/null 2>&1 || fail "docker image missing: $IMAGE"
@@ -29,27 +34,28 @@ check() {  # everything the sidecar and dsfront's vision path need; no side effe
   grep -q 'bias_vl' "$SNAP/model.safetensors.index.json" || fail "no ffn.gate.bias_vl entries in the index"
   grep -q -- --vision-addr ~/dsgb10/bin/dsfront 2>/dev/null || fail "staged dsfront predates vision (no --vision-addr in --help): re-run pico-prep.sh"
   grep -q -- --vision-addr <(printf '%s\n' "$DSGB10_FRONT_ARGS") || fail "DSGB10_FRONT_ARGS has no --vision-addr"
-  if up; then echo "check: sidecar $NAME is up ($(docker port "$NAME" 2>/dev/null || echo "host net"), $HOST:$PORT)"; else echo "check: OK — sidecar not running; ./spark-vision.sh start, then restart the service so dsfront re-reads --vision-addr"; fi
+  if running; then p="$(docker port "$NAME" 2>/dev/null)"; echo "check: sidecar $NAME is running (${p:+$p — }host network, $HOST:$PORT)"; else echo "check: OK — sidecar not running (./spark-vision.sh start brings it up; the service picks --vision-addr up at its next start)"; fi
 }
 
 case "${1:-status}" in
   check) check ;;
   start)
     check
-    up && { echo "spark-vision: $NAME already up"; exit 0; }
+    running && { echo "spark-vision: $NAME already running"; exit 0; }
+    docker rm -f "$NAME" > /dev/null 2>&1 || true   # a crashed/exited container holds the name
     docker run -d --name "$NAME" --restart unless-stopped --gpus all --net=host --memory=6g \
       -e VISION_PRELOAD=1 \
-      -v "$SNAP":/model:ro \
+      -v "$HUB_ROOT":/hub:ro \
       -v "$KIT_ROOT/ds41f-4xgx10-switchless/tools/vision":/app:ro \
-      --entrypoint python3 "$IMAGE" /app/vision_encoder.py --host "$HOST" --port "$PORT" > /dev/null
+      --entrypoint python3 "$IMAGE" /app/vision_encoder.py --model "/hub/$REL_SNAP" --host "$HOST" --port "$PORT" > /dev/null
     echo "spark-vision: $NAME started on $HOST:$PORT (logs: docker logs $NAME)"
     ;;
   stop)
-    up || { echo "spark-vision: $NAME not running"; exit 0; }
+    running || { echo "spark-vision: $NAME not running"; exit 0; }
     docker rm -f "$NAME" > /dev/null && echo "spark-vision: $NAME stopped"
     ;;
   status)
-    if up; then docker ps --filter "name=$NAME" --format "{{.Names}}: {{.Status}}"; nc -z "$HOST" "$PORT" 2>/dev/null && echo "  listening on $HOST:$PORT" || echo "  NOT listening on $HOST:$PORT yet"; else echo "spark-vision: $NAME not running (image requests would 503; text unaffected)"; fi
+    if running; then docker ps --filter "name=$NAME" --format "{{.Names}}: {{.Status}}"; nc -z "$HOST" "$PORT" 2>/dev/null && echo "  listening on $HOST:$PORT" || echo "  NOT listening on $HOST:$PORT yet"; else echo "spark-vision: $NAME not running (image requests would 503; text unaffected)"; fi
     ;;
   *) echo "usage: $0 [start|stop|status|check]"; exit 1 ;;
 esac

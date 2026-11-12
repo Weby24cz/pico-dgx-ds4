@@ -19,5 +19,11 @@ fi
 for h in spark1 spark2 spark3 spark4; do
   ssh "$h" 'test -r ~/cfmlp_cml.bin' || fail "gate weights missing on $h: ~/cfmlp_cml.bin (README-SPARK-CLUSTER.md step 4)"
 done
+# The vision sidecar is part of this kit's serving (spark-cluster.env puts DSGB10_VISION_ADDR into
+# FRONT_ARGS): sparkDash's Start button runs only this script, so the sidecar comes up here —
+# idempotent, ~1 GiB GPU on this box. Without DSGB10_VISION_ADDR the kit is text-only and skips it.
+if [ -n "${DSGB10_VISION_ADDR:-}" ]; then
+  "$KIT_ROOT/spark-vision.sh" start
+fi
 
 exec "$KIT/engine/server/service.sh" start
