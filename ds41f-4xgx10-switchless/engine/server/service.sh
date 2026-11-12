@@ -86,7 +86,7 @@ state() {  # state words...: run/state is "<state> <epoch> <what>"; starting|wai
 
 settings() {
   ADDR=${DSGB10_ADDR:-127.0.0.1} PORT=${DSGB10_PORT:-18893}
-  KEY=${DSGB10_KEY_FILE:-$HOME/dsgb10-data/dev-api-key}
+  KEY=${DSGB10_KEY_FILE-$HOME/dsgb10-data/dev-api-key}   # empty means keyless (the LAN convention, see spark-cluster.env)
   EARGS=${DSGB10_ENGINE_ARGS:---max-ctx 262144} FARGS=${DSGB10_FRONT_ARGS:-} NOTE=${DSGB10_NOTE:-}
   [ "$MOCK" = 1 ] && EARGS=${DSGB10_ENGINE_ARGS:---delay-ms 5}  # the mock engine's arguments
   BIN=${DSGB10_BIN:-$SRC/engine/build/server/$NAME} FBIN=${DSGB10_FRONT_BIN:-$SRC/frontend/target/release/dsfront}
@@ -119,8 +119,10 @@ check() {
   [ "$(addrs | sort | uniq -d)" = "" ] || die "DSGB10_ADDR names an address twice"
   [[ $PORT =~ ^[0-9]+$ ]] || die "DSGB10_PORT '$PORT' is not a port"
   [ "$PORT" != 8888 ] || [ "${DSGB10_PROD:-}" = 1 ] || die "port 8888 is the production endpoint: DSGB10_PROD=1"
-  [ -r "$KEY" ] || die "no API key file $KEY"
-  [ $((8#$(stat -c %a "$KEY") & 8#077)) = 0 ] || die "$KEY can be read by others: chmod 600 it"
+  if [ -n "$KEY" ]; then
+    [ -r "$KEY" ] || die "no API key file $KEY"
+    [ $((8#$(stat -c %a "$KEY") & 8#077)) = 0 ] || die "$KEY can be read by others: chmod 600 it"
+  fi
   [[ $YIELD_IDLE_S =~ ^[0-9]+$ && $HOLD_S =~ ^[0-9]+$ ]] || die "DSGB10_YIELD_IDLE_S and DSGB10_HOLD_S are seconds"
   [[ $KEEP_GIB =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "DSGB10_KEEP_GIB '$KEEP_GIB' is not GiB"
   if [ "$MOCK" = 1 ]; then  # a test instance must share nothing with the service
@@ -267,7 +269,8 @@ stop_engine() {  # rank 0 first: on SIGTERM a server ends the request in flight,
 
 start_front() {
   rotate "$LOGS/front.log"
-  "$H/bin/dsfront" serve $(addrs | sed "s|.*|--listen &:$PORT|") --engine-socket "$SOCK" --api-key-file "$KEY" \
+  local keyarg=(); [ -n "$KEY" ] && keyarg=(--api-key-file "$KEY")
+  "$H/bin/dsfront" serve $(addrs | sed "s|.*|--listen &:$PORT|") --engine-socket "$SOCK" "${keyarg[@]}" \
     --admin-socket "$ADMIN" --hold-s "$HOLD_S" --table-file "$RUN/front.table" $FARGS >> "$LOGS/front.log" 2>&1 < /dev/null 6>&- 8>&- 9>&- &
   FE=$! FE_T=$(date +%s)
   echo "$FE" > "$RUN/front.pid"

@@ -33,8 +33,13 @@ first start. **Nothing has been started** — the wrapper refuses until every st
    `~/dsgb10/{weights,engram}/` on spark3 (`rsync -a -e "bash /home/pavelkubicek/cluster/ring-ssh.sh"
    spark4.lan:/home/pavelkubicek/pico-cold/<f> ~/dsgb10/...`), re-run `./pico-verify.sh`.
    The two Engram source blobs are there too (`pico-fetch-engram.sh` re-downloads if lost).
-   Port 8000 note: Qwen (spark1/2) and GLM (spark3/4) each hold their own pair's 8000 — this kit
-   wants a free pair, stop the kit on its Sparks first.
+   Port 8000 note: this kit's head is spark1 — the SAME port Qwen (spark1/2) serves on. A started
+   pair is not proof of serving: on 2026-11-12 `./spark-start.sh` "looked OK" while Qwen still held
+   :8000 — dsfront died on the bind, the supervisor's `/health 200` was answered by **Qwen**, and
+   the four ranks squatted ~90 GiB each for nothing. Before starting: stop the Qwen pair (and stop
+   GLM on spark3/4 too — the engine uses all four cables, so a live GLM degrades both engines and
+   invalidates any bench), then prove the port is yours:
+   `curl -s 127.0.0.1:8000/v1/models | grep -q DeepSeek` before believing sparkDash.
 
 1. **`pico-fetch-engram.sh` → `pico-prep.sh`** (ran 2026-11-12; logs `~/pico-fetch.log`,
    `~/pico-prep.log` on spark1): the HF snapshot on spark1 was missing the two Engram shards
@@ -44,17 +49,20 @@ first start. **Nothing has been started** — the wrapper refuses until every st
    built dsfront (Rust 1.99.1), cut each rank's file, verified it against the checkpoint, packed
    the rank's Engram shards, shipped ranks 1-3 over the ring (`ring-ssh.sh`), CRC-checked each on
    its target box (`dsw_load --verify-crc`), placed rank 0's files, pre-staged `dsgb10_rank` +
-   `dsfront` + `fleet.conf` into every box's `~/dsgb10/bin/`. API key done (`~/dsgb10-data/api-key`,
-   0600); gate weights done (`~/cfmlp_cml.bin` on all four, 5536 B).
+   `dsfront` + `fleet.conf` into every box's `~/dsgb10/bin/`. Keyless by family convention
+   (`DSGB10_KEY_FILE=""` — sparkDash and ai-api-proxy carry no per-model key; the key file
+   `~/dsgb10-data/api-key` exists if you ever want to re-arm); gate weights done
+   (`~/cfmlp_cml.bin` on all four, 5536 B).
 2. **Ring self-check, no serving** (only while the GLM kit is STOPPED — the ring is one-job-at-a-time
-   and the GLM kit is live on spark1+spark2): `cd ds41f-4xgx10-switchless && export
+   and the GLM kit is live on spark3+spark4, which this engine's ranks also cross): `cd ds41f-4xgx10-switchless && export
    FLEET=$PWD/fleet/spark-cluster.conf && engine/server/ring.sh engine/comm/run4.sh
    engine/build/comm/ring_test` — every rank must print `passed`. Exercises the patched per-rank
    device wiring end to end.
-3. **Start + bench**: `./spark-start.sh` (the family rule: ONE DeepSeek kit holds port 8000 — the
-   TensorFold 4x kit is dismantled, the GLM kit uses 8000 only on its own pair), then the README's
-   checks (`tools/bench/bench.py http://127.0.0.1:8000/v1 c1 27` with the bearer key) and sparkDash
-   on dell.
+3. **Start + bench**: stop Qwen (spark1/2) and GLM (spark3/4), restore the rank-2 data (step 0),
+   then `./spark-start.sh` — keyless, like the rest of the family. Before anything else prove the
+   port is pico's: `curl -s http://127.0.0.1:8000/v1/models | grep DeepSeek-V4.1-Flash-1017`.
+   Then the README's checks (`tools/bench/bench.py http://127.0.0.1:8000/v1 c1 27`, no key) and
+   sparkDash on dell.
 
 ## Done 2026-11-12 (preparation pass) — READY TO START
 
@@ -77,8 +85,9 @@ first start. **Nothing has been started** — the wrapper refuses until every st
   ring transport) — spark1 keeps the 46 text shards, config, tokenizer; a re-prep copies the two
   blobs back or re-fetches with `pico-fetch-engram.sh` (~30 min).
 - Head data prepared: `~/dsgb10/{weights,engram}` filled on every box (rank files ~78 GB each,
-  shards ~50.7 GB per rank, one hash map), binaries pre-staged in `~/dsgb10/bin/`, API key at
-  `~/dsgb10-data/api-key`, gate weights at `~/cfmlp_cml.bin` (all four).
+  shards ~50.7 GB per rank, one hash map), binaries pre-staged in `~/dsgb10/bin/`, keyless serving
+  (`DSGB10_KEY_FILE=""`; the key file `~/dsgb10-data/api-key` is kept if you want to re-arm), gate
+  weights at `~/cfmlp_cml.bin` (all four).
 
 ## Notes
 
