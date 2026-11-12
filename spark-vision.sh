@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # spark-vision.sh — run the image-encoder sidecar for the pico DeepSeek kit (docs/vision.md).
-# The sidecar is tools/vision/vision_encoder.py in docker: it mounts the checkpoint snapshot
+# The sidecar is tools/vision/vision_encoder.py in docker: it mounts the checkpoint hub
 # read-only, imports the publisher's inference/vision.py + image_processor.py and turns
 # image_url / image parts into embedding rows on 127.0.0.1:$VISION_PORT (~1 GiB GPU on this
 # box, rank 0's). dsfront picks the address up from spark-cluster.env's DSGB10_VISION_ADDR
 # (--vision-addr): without it dsfront refuses image parts with the 400 the family saw on
-# 2026-11-12. The sidecar is independent of the service: start/stop it any time — sidecar
-# down only turns image requests into 503s; text is untouched. `check` verifies everything
-# without starting anything.
+# 2026-11-12.
+#
+# Lifecycle — the sidecar runs ONLY while the DeepSeek service runs: spark-start.sh /
+# spark-restart.sh bring it up (idempotent), spark-stop.sh takes it down, and `start` spawns
+# a watcher (`watch`, internal) that removes it when the service's supervisor disappears any
+# other way — a crash, a bare `service.sh stop`. The container restarts on failure only
+# (on-failure:3, self-heal while serving) and NEVER on a reboot, so a host restart with the
+# kit off holds nothing.
 set -euo pipefail
 KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAME=dsgx10-vision
@@ -22,6 +27,8 @@ SNAP="${DSGB10_SNAPSHOT/#\~/$HOME}"
 # address the snapshot by its path under it.
 HUB_ROOT="$(dirname "$(dirname "$(dirname "$SNAP")")")"
 REL_SNAP="${SNAP#"$HUB_ROOT"/}"
+# The service's run dir (service.sh's $H/run): the watcher reads its supervisor.pid from here.
+RUN_DIR="${DSGB10_RUN_DIR:-$HOME/dsgb10/service/run}"
 
 fail() { echo "spark-vision: $*" >&2; exit 1; }
 running() { [ "$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null)" = running ]; }
@@ -41,14 +48,39 @@ case "${1:-status}" in
   check) check ;;
   start)
     check
+    # Ensure a watcher on every invocation (idempotent: extras exit when the pid changes or dies) —
+    # also on the already-running path, where a restart kept the container but the OLD watcher just
+    # retired with the old supervisor.
+    ( setsid "$0" watch </dev/null >/dev/null 2>&1 & ) 2>/dev/null || true
     running && { echo "spark-vision: $NAME already running"; exit 0; }
     docker rm -f "$NAME" > /dev/null 2>&1 || true   # a crashed/exited container holds the name
-    docker run -d --name "$NAME" --restart unless-stopped --gpus all --net=host --memory=6g \
+    docker run -d --name "$NAME" --restart on-failure:3 --gpus all --net=host --memory=6g \
       -e VISION_PRELOAD=1 \
       -v "$HUB_ROOT":/hub:ro \
       -v "$KIT_ROOT/ds41f-4xgx10-switchless/tools/vision":/app:ro \
       --entrypoint python3 "$IMAGE" /app/vision_encoder.py --model "/hub/$REL_SNAP" --host "$HOST" --port "$PORT" > /dev/null
     echo "spark-vision: $NAME started on $HOST:$PORT (logs: docker logs $NAME)"
+    ;;
+  watch)  # internal, spawned by start: remove the sidecar when the service's supervisor is gone
+          # for good. A stop→start transition cancels it instead: the watcher follows THE pid it
+          # saw, and the 30 s grace lets a restart's new supervisor take the pid file first.
+    local_p=""
+    for i in $(seq 1 24); do  # 2 min for the supervisor to appear (the engine is ready in ~30 s);
+      local_p=$(cat "$RUN_DIR/supervisor.pid" 2>/dev/null || true)   # a start that never gets
+      [ -n "$local_p" ] && kill -0 "$local_p" 2>/dev/null && break   # there must not leave the
+      local_p=""; sleep 5                                            # sidecar idling: remove it
+    done
+    if [ -z "$local_p" ]; then docker rm -f "$NAME" >/dev/null 2>&1 || true; exit 0; fi
+    while [[ "$(cat "$RUN_DIR/supervisor.pid" 2>/dev/null)" == "$local_p" ]] && kill -0 "$local_p" 2>/dev/null; do
+      sleep 15
+    done
+    sleep 30
+    # Bail only on a handover: the pid file holding a DIFFERENT pid means a new supervisor took
+    # over (a restart passed through). A real stop leaves the same dead pid — or nothing at all
+    # (service.sh removes the file) — and must fall through to the removal.
+    now=$(cat "$RUN_DIR/supervisor.pid" 2>/dev/null || true)
+    [[ -n "$now" && "$now" != "$local_p" ]] && exit 0
+    docker rm -f "$NAME" >/dev/null 2>&1 || true
     ;;
   stop)
     running || { echo "spark-vision: $NAME not running"; exit 0; }
