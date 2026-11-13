@@ -30,6 +30,10 @@ use tokio::sync::mpsc;
 #[derive(Clone, Debug)]
 pub struct ServerConfig {
     pub model_name: String,
+    /// Extra ids advertised by /v1/models alongside model_name (the family's alias set:
+    /// vscode-utility, ds41, …). Requests already accept any model id; advertising the
+    /// aliases is what lets ai-api-proxy's discovery route them to this backend.
+    pub aliases: Vec<String>,
     pub api_key: Option<String>,
     /// Default and cap for max_tokens (the kit's DSV41_MAX_NEW_TOKENS).
     pub max_tokens_cap: u32,
@@ -180,14 +184,24 @@ async fn health(State(app): State<Arc<App>>) -> Response {
     }
 }
 
+fn models_json(cfg: &ServerConfig, max_len: Option<u32>) -> serde_json::Value {
+    let mut data = vec![json!({
+        "id": cfg.model_name, "object": "model", "created": 0, "owned_by": "dsgb10",
+        "root": cfg.model_name, "max_model_len": max_len})];
+    for a in &cfg.aliases {
+        data.push(json!({
+            "id": a, "object": "model", "created": 0, "owned_by": "dsgb10",
+            "root": cfg.model_name, "max_model_len": max_len}));
+    }
+    json!({"object": "list", "data": data})
+}
+
 async fn models(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
     if let Err(r) = check_auth(&app, &headers) {
         return r;
     }
     let max_len = app.engine.info().map(|i| i.max_context);
-    let body = json!({"object": "list", "data": [{
-        "id": app.cfg.model_name, "object": "model", "created": 0, "owned_by": "dsgb10",
-        "root": app.cfg.model_name, "max_model_len": max_len}]});
+    let body = models_json(&app.cfg, max_len);
     (StatusCode::OK, [("content-type", "application/json")], body.to_string()).into_response()
 }
 
@@ -979,6 +993,7 @@ mod tests {
     fn cfg() -> ServerConfig {
         ServerConfig {
             model_name: "m".into(),
+            aliases: Vec::new(),
             api_key: None,
             max_tokens_cap: 32768,
             default_effort: 75,
@@ -992,6 +1007,18 @@ mod tests {
             hold: Duration::from_secs(600),
             vision_addr: None,
         }
+    }
+
+    #[test]
+    fn models_lists_aliases() {
+        let mut c = cfg();
+        c.model_name = "DeepSeek-V4.1-Flash-1017".into();
+        c.aliases = vec!["vscode-utility".into(), "ds41".into()];
+        let v = models_json(&c, Some(1048576));
+        let ids: Vec<&str> = v["data"].as_array().unwrap().iter().map(|m| m["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["DeepSeek-V4.1-Flash-1017", "vscode-utility", "ds41"]);
+        assert_eq!(v["data"][1]["root"], json!("DeepSeek-V4.1-Flash-1017"));
+        assert_eq!(v["data"][2]["max_model_len"], json!(1048576));
     }
 
     #[test]

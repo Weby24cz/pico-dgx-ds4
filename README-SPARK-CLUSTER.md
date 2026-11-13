@@ -71,6 +71,10 @@ first start. **Nothing has been started** — the wrapper refuses until every st
    http://127.0.0.1:8000/v1/models | grep DeepSeek-V4.1-Flash-1017`. Then the README's checks
    (`tools/bench/bench.py http://127.0.0.1:8000/v1 c1 27`, no key) and sparkDash on dell. Vision
    smoke: an `image_url` chat request must answer (sidecar down => 503, never 400).
+   Aliases: `dsfront --aliases` advertises the family set (ds41, ds41-fast, ds41-coder-*,
+   benchmark-model, vscode-utility, vscode-utility-small) in /v1/models, which is what lets
+   ai-api-proxy route those ids here instead of to the GLM box; requests already accepted any
+   id, so an alias call is served as DeepSeek-V4.1-Flash-1017 (root in /v1/models).
 
 ## Done 2026-11-12 (preparation pass) — READY TO START
 
